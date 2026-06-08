@@ -1,0 +1,301 @@
+<div class="dashboard-wrapper">
+  <!-- Top Navigation Header -->
+  <header class="main-header">
+    <div class="header-logo">
+      <div class="pulse-indicator" [class]="status().nlpState.toLowerCase() === 'ready' ? 'ready' : 'warning'"></div>
+      <h1>JSE Sentiment <span>Analyser</span></h1>
+    </div>
+    
+    <div class="header-actions">
+      <!-- Active Endpoint Details -->
+      <div class="endpoint-badge" (click)="showSettings.set(!showSettings())">
+        <span class="label">API Endpoint:</span>
+        <span class="value">{{ sentimentService.apiUrl() }}</span>
+        <i class="icon-settings">&#9881;</i>
+      </div>
+      
+      <!-- Ingest Scraper Trigger -->
+      <button class="btn btn-primary btn-sm btn-icon" (click)="triggerScraper()" [disabled]="isIngesting()">
+        <span class="spinner" *ngIf="isIngesting()"></span>
+        <span *ngIf="!isIngesting()">&#8635; Run Scraper</span>
+        <span *ngIf="isIngesting()">Scraping...</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Temporary Toast Notifications -->
+  <div class="notification-banner" *ngIf="operationMessage()">
+    <p>{{ operationMessage() }}</p>
+  </div>
+
+  <!-- API Server Connection Error Alert -->
+  <div class="error-banner" *ngIf="errorMessage">
+    <p>&#9888; {{ errorMessage }}</p>
+    <button class="btn btn-xs btn-outline" (click)="showSettings.set(true)">Configure API URL</button>
+  </div>
+
+  <!-- Global Metrics Summary Cards -->
+  <section class="hero-summary">
+    <!-- Market Outlook Gauge -->
+    <div class="hero-card outlook-card" [class]="marketOutlook().class">
+      <div class="card-bg-glow"></div>
+      <div class="card-content">
+        <h3>JSE Market Outlook</h3>
+        <div class="outlook-badge">
+          {{ marketOutlook().label }}
+        </div>
+        <div class="outlook-value">
+          <span class="score-num">{{ marketOutlook().score.toFixed(2) }}</span>
+          <span class="score-label">Weighted Average (-1.0 to 1.0)</span>
+        </div>
+        <div class="gauge-bar">
+          <div class="gauge-fill" [style.left.%]="(marketOutlook().score + 1) * 50"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- NLP Engine Status Summary -->
+    <div class="hero-card status-card" [class]="status().nlpState.toLowerCase()">
+      <div class="card-content">
+        <div class="card-header-row">
+          <h3>Operational Status</h3>
+          <span class="status-indicator-badge">{{ status().nlpState }}</span>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-item">
+            <span class="stat-label">Model Load Time</span>
+            <span class="stat-value">{{ status().nlpState === 'LOADING' ? 'In Progress' : status().initTimeMs + ' ms' }}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Total Requests</span>
+            <span class="stat-value">{{ status().totalRequests }}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Fallback Count</span>
+            <span class="stat-value font-warning">{{ status().fallbackRequests }}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Avg NLP Latency</span>
+            <span class="stat-value">{{ status().averageLatencyMs.toFixed(1) }} ms</span>
+          </div>
+        </div>
+        <div class="status-footer-error" *ngIf="status().nlpState === 'FAILED'">
+          <strong>Error:</strong> {{ status().failureReason }}
+        </div>
+        <div class="status-footer-error text-success" *ngIf="status().nlpState === 'LOADING'">
+          CoreNLP models are downloading/initializing in background. Regex fallback is active.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Sector Cards Grid -->
+  <section class="sectors-grid">
+    <div class="sector-card" *ngFor="let s of sectors()" [class]="getScoreColorClass(s.averageScore)">
+      <div class="sector-header">
+        <h4>{{ s.sector }}</h4>
+        <span class="articles-count">{{ s.totalCount }} articles</span>
+      </div>
+      
+      <!-- Sentiment Score Gauge -->
+      <div class="sector-score-section">
+        <div class="score-badge">{{ s.averageScore.toFixed(2) }}</div>
+        <div class="score-category-label">{{ getScoreLabel(s.averageScore) }}</div>
+      </div>
+
+      <!-- Segmented Ratio Bar -->
+      <div class="segmented-ratio-bar" *ngIf="s.totalCount > 0">
+        <div class="segment segment-pos" [style.width.%]="formatPercentage(s.positiveCount, s.totalCount)" title="Positive: {{formatPercentage(s.positiveCount, s.totalCount)}}%"></div>
+        <div class="segment segment-neu" [style.width.%]="formatPercentage(s.neutralCount, s.totalCount)" title="Neutral: {{formatPercentage(s.neutralCount, s.totalCount)}}%"></div>
+        <div class="segment segment-neg" [style.width.%]="formatPercentage(s.negativeCount, s.totalCount)" title="Negative: {{formatPercentage(s.negativeCount, s.totalCount)}}%"></div>
+      </div>
+
+      <!-- Ratios Legend Details -->
+      <div class="ratios-details" *ngIf="s.totalCount > 0">
+        <span class="ratio text-pos">{{ formatPercentage(s.positiveCount, s.totalCount) }}% Pos</span>
+        <span class="ratio text-neu">{{ formatPercentage(s.neutralCount, s.totalCount) }}% Neu</span>
+        <span class="ratio text-neg">{{ formatPercentage(s.negativeCount, s.totalCount) }}% Neg</span>
+      </div>
+      <div class="ratios-details empty" *ngIf="s.totalCount === 0">
+        No news articles classified in 72h window.
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Body Content Panels -->
+  <div class="main-layout">
+    <!-- Left Column: Headline News Feed -->
+    <main class="feed-panel">
+      <div class="panel-header">
+        <h2>JSE Market News Feed</h2>
+        <div class="filter-controls">
+          <!-- Text Search Box -->
+          <div class="search-input-wrapper">
+            <span class="search-icon">&#128269;</span>
+            <input type="text" placeholder="Search headlines..." [ngModel]="searchQuery()" (ngModelChange)="searchQuery.set($event)">
+          </div>
+          <!-- Sector Filter Dropdown -->
+          <select [ngModel]="activeSectorFilter()" (ngModelChange)="activeSectorFilter.set($event)" class="sector-select">
+            <option value="All">All Sectors</option>
+            <option value="Mining">Mining</option>
+            <option value="Financials">Financials</option>
+            <option value="Retail">Retail</option>
+            <option value="Technology & Telecoms">Technology & Telecoms</option>
+            <option value="Energy & Industrials">Energy & Industrials</option>
+            <option value="General Business">General Business</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Headlines List View -->
+      <div class="headlines-list">
+        <div class="empty-feed" *ngIf="filteredHeadlines().length === 0">
+          <p>No headlines found matching search criteria.</p>
+        </div>
+        
+        <article class="headline-item" *ngFor="let h of filteredHeadlines()" [class]="h.sentiment.toLowerCase()">
+          <div class="headline-meta">
+            <span class="badge badge-sector">{{ h.sector }}</span>
+            <span class="meta-source-date">{{ h.source }} &bull; {{ h.publishedDate | date:'MMM d, h:mm a' }}</span>
+            
+            <div class="engine-badges">
+              <span class="engine-badge" [class]="h.analyzerEngine.toLowerCase()">
+                {{ h.analyzerEngine === 'CORENLP' ? 'CoreNLP' : 'Regex Fallback' }}
+              </span>
+              <span class="latency-badge" *ngIf="h.processingTimeMs > 0">{{ h.processingTimeMs }}ms</span>
+            </div>
+          </div>
+          
+          <h3 class="headline-title">{{ h.title }}</h3>
+          <p class="headline-desc" *ngIf="h.description">{{ h.description }}</p>
+          
+          <div class="headline-footer">
+            <a [href]="h.url" target="_blank" class="news-link">Read Source Article &rarr;</a>
+            <div class="sentiment-score-badge" [class]="getScoreColorClass(h.sentimentScore)">
+              Score: {{ h.sentimentScore.toFixed(2) }}
+            </div>
+          </div>
+        </article>
+      </div>
+    </main>
+
+    <!-- Right Column: Interactive Workbenches -->
+    <aside class="sidebar-panel">
+      <!-- Settings Panel -->
+      <div class="sidebar-card settings-card" *ngIf="showSettings() || errorMessage">
+        <h3>API Server Settings</h3>
+        <div class="form-group">
+          <label for="apiUrl">Render Backend Base URL</label>
+          <input type="text" id="apiUrl" [ngModel]="apiUrlInput()" (ngModelChange)="apiUrlInput.set($event)" placeholder="e.g., https://jse-sentiment-analyser.onrender.com">
+          <p class="help-text">Point this to your hosted Render web service or localhost:8080.</p>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-success btn-sm" (click)="saveApiSettings()">Save & Connect</button>
+          <button class="btn btn-outline btn-sm" (click)="resetApiSettings()">Reset Defaults</button>
+          <button class="btn btn-ghost btn-sm" (click)="showSettings.set(false)" *ngIf="!errorMessage">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Custom Sentiment Simulator -->
+      <div class="sidebar-card simulator-card">
+        <h3>Sentiment Simulator Workbench</h3>
+        <p class="card-intro">Test custom news titles to benchmark Stanford CoreNLP linguistic parsing against the heuristic Regex dictionary.</p>
+        
+        <div class="form-group">
+          <textarea placeholder="Paste or type a financial headline here (e.g. 'Naspers shares drop following earnings downgrade...')" [ngModel]="simulatorText()" (ngModelChange)="simulatorText.set($event)" rows="3"></textarea>
+        </div>
+        
+        <button class="btn btn-primary w-full" (click)="runSimulator()" [disabled]="isSimulating() || !simulatorText().trim()">
+          <span class="spinner" *ngIf="isSimulating()"></span>
+          <span *ngIf="!isSimulating()">Benchmark Headline</span>
+          <span *ngIf="isSimulating()">Analysing...</span>
+        </button>
+
+        <!-- Benchmark Side-by-side results -->
+        <div class="simulator-results" *ngIf="simulatorResult()">
+          <h4>Benchmark Comparison</h4>
+          <div class="comparison-grid">
+            <!-- CoreNLP Column -->
+            <div class="result-col" [class]="simulatorResult().serviceResult.engineUsed.toLowerCase()">
+              <h5>Stanford CoreNLP</h5>
+              <div class="result-badge" [class]="getScoreColorClass(simulatorResult().serviceResult.score)">
+                {{ simulatorResult().serviceResult.sentiment }}
+              </div>
+              <div class="result-metric">
+                <span class="label">Score:</span>
+                <span class="val">{{ simulatorResult().serviceResult.score.toFixed(2) }}</span>
+              </div>
+              <div class="result-metric">
+                <span class="label">Latency:</span>
+                <span class="val">{{ simulatorResult().serviceResult.latencyMs }}ms</span>
+              </div>
+              <div class="result-metric font-italic">
+                <span class="label">Engine:</span>
+                <span class="val">{{ simulatorResult().serviceResult.engineUsed === 'CORENLP' ? 'NLP Model' : 'Fallback' }}</span>
+              </div>
+            </div>
+
+            <!-- Regex Column -->
+            <div class="result-col regex_fallback">
+              <h5>Regex Engine</h5>
+              <div class="result-badge" [class]="getScoreColorClass(simulatorResult().regexResult.score)">
+                {{ simulatorResult().regexResult.sentiment }}
+              </div>
+              <div class="result-metric">
+                <span class="label">Score:</span>
+                <span class="val">{{ simulatorResult().regexResult.score.toFixed(2) }}</span>
+              </div>
+              <div class="result-metric">
+                <span class="label">Latency:</span>
+                <span class="val">{{ simulatorResult().regexResult.latencyMs }}ms</span>
+              </div>
+              <div class="result-metric font-italic">
+                <span class="label">Engine:</span>
+                <span class="val">Heuristic</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Administrative Controls -->
+      <div class="sidebar-card admin-card">
+        <h3>Administrative Commands</h3>
+        <div class="btn-grid">
+          <!-- CoreNLP Enable/Disable Toggle -->
+          <button class="btn btn-outline btn-sm btn-block" 
+                  [class.btn-warning]="status().nlpState !== 'DISABLED'" 
+                  (click)="toggleNlpEngine(status().nlpState)">
+            {{ status().nlpState === 'DISABLED' ? 'Enable CoreNLP Engine' : 'Disable CoreNLP (Force Fallback)' }}
+          </button>
+          
+          <!-- Trigger Manual Ingestion -->
+          <button class="btn btn-outline btn-sm btn-block" (click)="triggerScraper()" [disabled]="isIngesting()">
+            Manual Scrape Run
+          </button>
+
+          <!-- Seeder Reset Button -->
+          <button class="btn btn-outline btn-sm btn-block btn-danger" (click)="runSeeder()">
+            Purge & Reset Seed Data
+          </button>
+        </div>
+      </div>
+
+      <!-- Real-time Operational Pipeline Logs -->
+      <div class="sidebar-card logs-card">
+        <div class="logs-header">
+          <h3>Real-time Scraper & Pipeline Logs</h3>
+          <button class="btn-text-only" (click)="loadAllData()">Refresh</button>
+        </div>
+        <div class="terminal-view">
+          <div class="log-line" *ngFor="let log of status().pipelineLogs">
+            {{ log }}
+          </div>
+          <div class="log-line empty" *ngIf="status().pipelineLogs.length === 0">
+            No pipeline operations logged yet.
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
